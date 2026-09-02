@@ -1,0 +1,38 @@
+name: Security Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run Pytest
+        run: uv run pytest -q
+
+      - name: Run Adversarial Benchmark
+        run: uv run agentguard adversarial
+
+      - name: Run Audit Tamper Benchmark
+        run: uv run agentguard audit attack
+
+      - name: Run Security Gate
+        run: uv run agentguard security-gate
