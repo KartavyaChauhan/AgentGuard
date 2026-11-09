@@ -1,3 +1,4 @@
+import pathlib
 from typing import Optional
 
 from agentguard.intent.models import TaskIntent
@@ -51,7 +52,7 @@ class IntentEnforcer:
                 
         if capability == Capability.FILE_READ or capability == Capability.FILE_WRITE:
             # Check all possible path arguments
-            path_keys = {"path", "filename", "file", "filepath", "dir", "directory"}
+            path_keys = {"path", "filename", "file", "filepath", "dir", "directory", "source", "dest", "destination", "target"}
             lower_args = {k.lower(): v for k, v in request.arguments.items()}
             
             found_arg = False
@@ -76,13 +77,30 @@ class IntentEnforcer:
                             risk_level=RiskLevel.CRITICAL
                         )
                     elif allowed_resources:
-                        # Explicitly allowed by intent constraints
-                        return PolicyDecision(
-                            action=PolicyAction.ALLOW,
-                            reason="Explicitly authorized by TaskIntent resource constraints.",
-                            rule_id="intent-explicit-allow",
-                            risk_level=RiskLevel.LOW
-                        )
+                        # Only return explicit ALLOW if the resource was explicitly and exactly named
+                        # in the intent resource constraints. General workspace scoping falls through to PolicyEngine.
+                        is_exact_match = False
+                        try:
+                            resolved_arg = pathlib.Path(arg_val).resolve()
+                            for r in allowed_resources:
+                                try:
+                                    if resolved_arg == pathlib.Path(r).resolve():
+                                        is_exact_match = True
+                                        break
+                                except Exception:
+                                    if arg_val == r:
+                                        is_exact_match = True
+                                        break
+                        except Exception:
+                            is_exact_match = (arg_val in allowed_resources)
+
+                        if is_exact_match:
+                            return PolicyDecision(
+                                action=PolicyAction.ALLOW,
+                                reason="Explicitly authorized by TaskIntent resource constraints.",
+                                rule_id="intent-explicit-allow",
+                                risk_level=RiskLevel.LOW
+                            )
                         
             if not found_arg:
                 return PolicyDecision(

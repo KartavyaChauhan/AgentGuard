@@ -505,11 +505,13 @@ class TestPublicAPI:
             ApprovalRule,
             ArgumentPatternRule,
             PolicyAction,
+            PolicyConfigurationError,
             PolicyDecision,
             PolicyEngine,
             RiskLevel,
             ToolNameRule,
             ToolRequest,
+            load_policy_rules,
         )
 
     def test_end_to_end(self) -> None:

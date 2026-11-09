@@ -8,12 +8,18 @@ from mcp.server.stdio import stdio_server
 
 from agentguard.policy.engine import PolicyEngine
 from agentguard.events.store import EventStore
+from agentguard.context.models import SecurityContext
 from .models import GatewayConfig
 from .proxy import AgentGuardGateway
 
 logger = logging.getLogger(__name__)
 
-async def run_gateway(config: GatewayConfig, policy_engine: PolicyEngine, event_store: Optional[EventStore] = None):
+async def run_gateway(
+    config: GatewayConfig,
+    policy_engine: PolicyEngine,
+    event_store: Optional[EventStore] = None,
+    security_context: Optional[SecurityContext] = None
+):
     """Run the AgentGuard Gateway.
     
     This function spawns the upstream MCP server, connects to it,
@@ -32,7 +38,8 @@ async def run_gateway(config: GatewayConfig, policy_engine: PolicyEngine, event_
                 gateway = AgentGuardGateway(
                     client_session=client_session,
                     policy_engine=policy_engine,
-                    event_store=event_store
+                    event_store=event_store,
+                    security_context=security_context
                 )
                 
                 async with stdio_server() as (server_read, server_write):

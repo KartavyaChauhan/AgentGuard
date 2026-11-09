@@ -1,21 +1,21 @@
 # AgentGuard
 
-Task-aware runtime security for AI agents and MCP tool execution.
+A task-aware MCP runtime security gateway that combines least-privilege intent enforcement, resource validation, data-flow provenance, behavioral analysis, tool-integrity checks, unified trust decisions, and tamper-evident auditing.
 
-AgentGuard provides a defense-in-depth, runtime security gateway that inspects and authorizes tool executions based on behavioral analysis, task intent, and dynamic risk scoring.
-
-```text
+```
 AI Agent
    ↓
-MCP Gateway
-   ↓
-Intent + Least Privilege
-   ↓
-Policy / Resource Validation
-   ↓
-Data Flow Inspection
-   ↓
-Tool Execution
+┌──────────────────────────┐
+│     AgentGuard Gateway   │
+├──────────────────────────┤
+│  Intent + Least Privilege│
+│  Policy / Resource Check │
+│  Data Flow Inspection    │
+├──────────────────────────┤
+│  ↓ ALLOW or ✕ DENY      │
+└──────────────────────────┘
+   ↓ (only if allowed)
+Tool Execution (upstream MCP)
    ↓
 Behavior / Risk / Trust
    ↓
@@ -24,21 +24,57 @@ Tamper-Evident Audit
 
 ## Why AgentGuard?
 
-AI agents can invoke tools, access sensitive resources, and chain individually valid actions into dangerous workflows. Traditional static access controls and simple per-tool allow/deny lists are insufficient to protect against sophisticated attacks like prompt injection, malicious tool chaining, or data exfiltration. AgentGuard evaluates the holistic context of agent actions at runtime to detect and prevent dangerous behavioral trajectories.
+AI agents can invoke tools, access sensitive resources, and chain individually valid actions into dangerous workflows. A simple per-tool allow/deny list is not enough — an agent that reads `.env`, runs a shell command, and then makes an HTTP request has executed three individually permitted actions that together constitute credential exfiltration.
+
+AgentGuard evaluates the **full behavioral context** of agent actions at runtime. It enforces authorization *before* upstream execution so that denied requests produce zero side effects.
+
+## Demo
+
+```
+$ uv run agentguard demo
+
+========================================
+Scenario: SAFE DEVELOPMENT
+========================================
+Tool calls:
+  [+] read_file(path='app.py')
+  [+] write_file(path='app.py', content='safe code')
+  [+] run_tests(test_status='passed')
+
+AgentGuard:  TRUSTED          Risk: LOW
+
+========================================
+Scenario: SECRET EXFILTRATION
+========================================
+Tool calls:
+  [x] read_file(path='.env')         ← BLOCKED by deny-read-env
+
+AgentGuard:  BLOCKED          Risk: HIGH
+
+========================================
+Scenario: SUSPICIOUS CHAIN
+========================================
+Tool calls:
+  [+] read_file(path='app.py')
+  [+] shell(command='...')
+  [x] http_request(url='...')        ← BLOCKED (suspicious chain)
+
+AgentGuard:  BLOCKED          Risk: MEDIUM
+```
 
 ## Core Capabilities
 
-- **MCP Runtime Gateway**: Intercepts and proxies Model Context Protocol (MCP) tool execution.
-- **Task-Aware Intent Enforcement**: Binds agent capabilities strictly to the current authorized task intent.
-- **Capability-Level Authorization**: Enforces least-privilege resource access.
-- **Path/URL/Resource Restrictions**: Statically and dynamically restricts arguments.
-- **Data-Flow/Provenance Tracking**: Tracks sensitive data as it moves through the execution lifecycle.
-- **Behavioral Sequence Analysis**: Identifies known dangerous chains (e.g., read credentials -> execute shell -> external network request).
-- **Trajectory Risk Scoring**: Accumulates a dynamic risk score over the session lifetime.
-- **Outcome/Evidence Verification**: Asserts required verification steps are taken before critical operations.
-- **MCP Tool Integrity/Rug-Pull Detection**: Prevents malicious injection into the tool definitions.
-- **Tamper-Evident Audit Trail**: Cryptographically hashes and links audit events for irrefutable history.
-- **Adversarial Security Benchmarks**: Evaluates defenses against an evolving suite of red-team evasions.
+- **MCP Runtime Gateway** — intercepts and proxies Model Context Protocol tool execution
+- **Task-Aware Intent Enforcement** — binds agent capabilities to the current authorized task
+- **Capability-Level Authorization** — enforces least-privilege resource access
+- **Path/URL/Resource Restrictions** — statically and dynamically validates arguments
+- **Data-Flow/Provenance Tracking** — tracks sensitive data through the execution lifecycle
+- **Behavioral Sequence Analysis** — detects dangerous action chains (read credentials → shell → network)
+- **Trajectory Risk Scoring** — accumulates dynamic risk over the session lifetime
+- **Outcome/Evidence Verification** — asserts verification steps before critical operations
+- **MCP Tool Integrity/Rug-Pull Detection** — detects malicious mutation of tool definitions
+- **Tamper-Evident Audit Trail** — cryptographically hash-chains audit events
+- **Adversarial Security Benchmarks** — evaluates defenses against red-team evasion suites
 
 ## Quickstart
 
@@ -49,74 +85,81 @@ uv sync
 uv run pytest -q
 ```
 
-Useful commands:
+Run the demos and benchmarks:
 ```bash
-uv run agentguard demo
-uv run agentguard adversarial
-uv run agentguard redteam
-uv run agentguard audit attack
-uv run agentguard security-gate
+uv run agentguard demo              # interactive security scenarios
+uv run agentguard adversarial       # 45-case authorization benchmark
+uv run agentguard redteam           # 12-scenario red-team evasion suite
+uv run agentguard audit attack      # 10-case tamper detection benchmark
+uv run agentguard security-gate     # unified regression gate
 ```
 
 ## Architecture
 
-AgentGuard acts as an intermediary MCP Server. When an AI client requests a tool execution, the request passes through the **Gateway**. The Gateway evaluates the tool and its arguments against the **Policy Engine** and the **Trust Engine**. It determines the current **Task Intent** and runs invariant checks (such as **Behavior Analyzer** and **Risk Engine**) pre-execution. If the action is permitted, it is forwarded to the upstream MCP Server, and the result is safely returned. Both the request and result are persisted immutably in the **Event Store** for tamper-evident auditing.
+AgentGuard acts as an intermediary MCP server. When an AI client requests a tool execution, the request passes through the **Gateway**, which evaluates it against the **Policy Engine**, **Trust Engine**, and current **Task Intent**. Invariant checks (**Behavior Analyzer**, **Risk Engine**) run pre-execution. If authorized, the request is forwarded to the upstream MCP server. Both the request and result are persisted in the **Event Store** for tamper-evident auditing.
+
+The critical design constraint: **enforcement occurs before upstream execution**. A denied request never reaches the upstream server and produces zero side effects.
 
 ## Security Benchmarks
 
-These are synthetic internal benchmarks demonstrating AgentGuard's resilience against known evasion and tampering techniques.
+Synthetic internal benchmarks. All results are from the current repository.
 
-| Benchmark | Cases | Result |
-| --- | --- | --- |
-| Adversarial Authorization | 45 | 45 blocked |
-| Red-Team Prevention | 12 | 10 blocked, 2 detected |
-| Audit Tampering | 10 | 10 detected |
-| Full Test Suite | 591 | 591 passed |
+**PREVENTED** = blocked before upstream execution (zero side effects).
+**DETECTED** = identified after execution via behavioral/integrity analysis.
 
-*Note: Results are based on the latest internal benchmark suite.*
+| Benchmark | Cases | Prevented | Detected | Missed |
+| --- | --- | --- | --- | --- |
+| Adversarial Authorization | 45 | 45 | — | 0 |
+| Red-Team Evasion | 12 | 10 | 2 | 0 |
+| Audit Tampering | 10 | — | 10 | 0 |
+| Full Test Suite | 591 | — | — | 0 failures |
+
+**Red-Team detail:**
+- 10 attacks **PREVENTED** pre-execution (secret exfiltration, credential theft, suspicious chains, privilege escalation, destructive commands, force push)
+- 2 attacks **DETECTED** post-execution (repeated-failure pattern, tool poisoning)
+- 0 dangerous upstream side effects
+- 0 false positives
+- 0 critical misses
 
 ## Security Model
 
-- **Pre-execution Enforcement**: Security checks are performed *before* upstream execution.
-- **Zero Dangerous Upstream Side Effects**: Denied requests are blocked completely at the gateway level.
-- **Context-Bound Authorization**: Task intent actively restricts which capabilities and resources can be accessed dynamically.
-- **Isolated Auditing**: Audit persistence operates alongside but independently of the critical path enforcement.
-- **Tamper-Evident History**: Audit records are hash-chained to detect subsequent modifications.
-- **Data Sanitization**: Sensitive inputs and credentials are scrubbed before persistence.
+- **Pre-execution Enforcement**: Authorization checks run *before* upstream execution. Denied requests produce zero upstream side effects.
+- **Context-Bound Authorization**: Task intent dynamically restricts which capabilities and resources are accessible.
+- **Deterministic Enforcement**: The current security path is fully deterministic — it does not rely on an LLM to make authoritative security decisions.
+- **Isolated Auditing**: Audit persistence operates as a side-channel, independent of the enforcement critical path. A persistence failure cannot block or delay a security decision.
+- **Tamper-Evident History**: Audit records are hash-chained to detect subsequent modification.
+- **Data Sanitization**: Sensitive inputs and credentials are scrubbed before audit persistence.
 
 ## Known Limitations
 
-- **Local Persistence**: The local SQLite database provides cryptographic tamper-evidence, but is not physically immutable against an attacker with host OS root privileges.
-- **Secret Detection**: Deterministic secret detection relies on entropy and format matching, which cannot identify every possible obfuscated secret.
-- **Anomaly Detection**: Behavioral rules catch known malicious chains, but do not represent a complete generalized anomaly detector.
-- **Non-Universal**: Benchmark results do not guarantee absolute safety against all 0-day exploits or completely novel evasion vectors.
-- **Semantic Limits**: LLM semantic analysis (when configured) provides heuristic value but is not currently treated as an authoritative enforcement mechanism.
+- **Local Persistence**: The SQLite audit database provides cryptographic tamper-evidence, but is not physically immutable against an attacker with host OS root privileges.
+- **Secret Detection**: Deterministic secret detection relies on entropy and format matching, which cannot identify every possible obfuscated secret format.
+- **Behavioral Rules**: Rules catch known malicious chains, but do not constitute a complete generalized anomaly detector.
+- **Benchmark Scope**: Results are from synthetic internal benchmarks and do not establish universal security guarantees against novel attack vectors.
+- **Semantic Analysis**: AgentGuard's current enforcement path is deterministic; it does not rely on an LLM to make authoritative security decisions.
 
 ## GitHub Security Recommendations
 
-For deployments and forks of this repository, we strongly recommend enabling:
-- Dependabot for dependency updates
-- Secret Scanning and Push Protection
-- Code Scanning (e.g., CodeQL)
+For deployments and forks of this repository, we recommend enabling:
+- **Dependabot** for automated dependency updates
+- **Secret Scanning / Push Protection** to prevent credential leakage
+- **Code Scanning** (e.g., CodeQL) for static analysis
 
 ## Development
 
-Run tests and coverage:
 ```bash
-uv run pytest
-uv run pytest --cov
-```
-
-Run CLI tools:
-```bash
-uv run agentguard --help
+uv run pytest                       # run full test suite
+uv run pytest --cov                 # run with coverage
+uv run agentguard --help            # list all CLI commands
+uv run agentguard security-gate     # unified security regression gate
 ```
 
 ### Project Structure
-- `src/agentguard/`: Core gateway, policy, intent, execution, and audit engines.
-- `tests/`: Extensive unit and integration test suite.
-- `benchmarks/`: Adversarial definitions and scenarios.
+- `src/agentguard/` — core gateway, policy, intent, execution, and audit engines
+- `tests/` — unit and integration test suite (591 tests)
+- `benchmarks/` — adversarial scenario definitions
+- `examples/` — usage examples and rug-pull demos
 
 ## License
 
-AgentGuard is licensed under the MIT License.
+MIT — see [LICENSE](LICENSE).

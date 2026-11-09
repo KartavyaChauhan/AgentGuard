@@ -70,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gateway_parser.add_argument("--upstream", type=str, help="Upstream MCP server command (e.g., 'python -m my_server')")
     gateway_parser.add_argument("--config", type=str, help="Path to gateway config JSON")
+    gateway_parser.add_argument("--policy", "--policies", dest="policy", type=str, help="Path to custom policy JSON file or built-in spec ('default')")
 
     risk_parser = subparsers.add_parser("risk", help="Evaluate trajectory risk of benchmark scenarios")
     risk_parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
@@ -125,17 +126,33 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_gateway_command(args: argparse.Namespace) -> int:
     import asyncio
+    import os
     import sys
     from agentguard.gateway.config import load_config
     from agentguard.gateway.server import run_gateway
-    from agentguard.policy.defaults import DEFAULT_RULES
+    from agentguard.policy.loader import load_policy_rules
     from agentguard.policy.engine import PolicyEngine
     from agentguard.events.store import EventStore
     
+    cli_policy = getattr(args, "policy", None)
+    if not isinstance(cli_policy, str):
+        cli_policy = None
+
     try:
-        config = load_config(path=args.config, cli_upstream=args.upstream)
+        config = load_config(
+            path=args.config,
+            cli_upstream=args.upstream,
+            cli_policies=cli_policy
+        )
     except Exception as e:
         print(f"Error loading config: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        rules = load_policy_rules(config.policies)
+        policy_engine = PolicyEngine(rules=rules)
+    except Exception as e:
+        print(f"Error loading policy: {e}", file=sys.stderr)
         return 1
         
     print("AgentGuard MCP Gateway\n", file=sys.stderr)
@@ -144,9 +161,14 @@ def run_gateway_command(args: argparse.Namespace) -> int:
     print("\nPolicy enforcement: enabled", file=sys.stderr)
     print("Event recording: enabled\n", file=sys.stderr)
     
-    # In a real implementation we might load custom rules. For now, defaults.
-    policy_engine = PolicyEngine(rules=DEFAULT_RULES)
-    event_store = EventStore()
+    if config.event_store == "sqlite":
+        from agentguard.audit.repository import AuditRepository
+        db_path = os.environ.get("AGENTGUARD_AUDIT_DB", "audit.sqlite3")
+        repo = AuditRepository(db_path)
+        repo.create_database()
+        event_store = EventStore(audit_repository=repo)
+    else:
+        event_store = EventStore()
     
     try:
         asyncio.run(run_gateway(config, policy_engine, event_store))
