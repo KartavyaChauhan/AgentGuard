@@ -18,6 +18,11 @@ Usage::
 """
 
 from agentguard.policy.engine import PolicyEngine
+from agentguard.policy.loader import (
+    PolicyConfigurationError,
+    load_policy_rules,
+    parse_policy_dict,
+)
 from agentguard.policy.models import PolicyAction, PolicyDecision, RiskLevel, ToolRequest
 from agentguard.policy.rules import ApprovalRule, ArgumentPatternRule, ToolNameRule
 
@@ -25,9 +30,12 @@ __all__ = [
     "ApprovalRule",
     "ArgumentPatternRule",
     "PolicyAction",
+    "PolicyConfigurationError",
     "PolicyDecision",
     "PolicyEngine",
     "RiskLevel",
     "ToolNameRule",
     "ToolRequest",
+    "load_policy_rules",
+    "parse_policy_dict",
 ]
